@@ -1,8 +1,9 @@
 import tkinter as tk
 from tkinter import ttk
+from time import sleep
+import threading
 import sys
 import os
-import threading
 
 current = os.path.dirname(os.path.realpath(__file__))
 parent_directory = os.path.dirname(current)
@@ -10,82 +11,101 @@ sys.path.append(parent_directory)
 
 from siyi_sdk import SIYISDK
 
-# Create window
+# Initialize main window
 window = tk.Tk()
-window.title('SiYi Ground Control')
+window.title('SiYi Ground Control ( ͡❛ ͜ʖ ͡❛)')
 window.geometry('320x240')
 
-# Connect to SIYI SDK
+class CamAngle:
+    def __init__(self):
+        self.yaw = 0
+        self.pitch = 0
+
+    def addYaw(self, dy):
+        self.yaw = max(min(self.yaw + dy, 45), -45)
+
+    def addPitch(self, dp):
+        self.pitch = max(min(self.pitch + dp, 25), -90)
+
+    def zero(self):
+        self.yaw = 0
+        self.pitch = 0
+
+cam_angle = CamAngle()
 cam = SIYISDK(server_ip="192.168.144.25", port=37260)
+
+# Connect to camera
 if not cam.connect():
-    print("Connection failed")
+    print("❌ Failed to connect to camera.")
     exit(1)
 
 cam.requestFollowMode()
+sleep(3)  # allow time for attitude listener to initialize
 
-class GimbalControl:
-    def __init__(self, sdk):
-        self.sdk = sdk
-        self.lock = threading.Lock()
+# Verify attitude is being received
+print("⏳ Waiting for attitude data...")
+for _ in range(10):
+    att = cam.getAttitude()
+    print("Attitude:", att)
+    if att and len(att) >= 2:
+        break
+    sleep(0.5)
+else:
+    print("⚠️ Attitude data not received. Gimbal movement may not work.")
 
-    def _get_safe_attitude(self):
-        attitude = self.sdk.getAttitude()
-        if attitude is None or len(attitude) < 2:
-            return 0, 0
-        return attitude[0], attitude[1]  # yaw, pitch
+# Lock for safe threading
+lock = threading.Lock()
 
-    def move(self, dyaw=0, dpitch=0):
-        def _threaded_move():
-            with self.lock:
-                yaw, pitch = self._get_safe_attitude()
-                yaw += dyaw
-                pitch += dpitch
-                yaw = max(min(yaw, 45), -45)
-                pitch = max(min(pitch, 25), -90)
-                print(f"[MOVE] Yaw: {yaw}, Pitch: {pitch}")
-                self.sdk.setGimbalRotation(yaw, pitch)
-        threading.Thread(target=_threaded_move).start()
+def move_gimbal():
+    with lock:
+        print(f"[MOVE] Yaw: {cam_angle.yaw}, Pitch: {cam_angle.pitch}")
+        success = cam.setGimbalRotation(cam_angle.yaw, cam_angle.pitch)
+        if not success:
+            print("⚠️ Movement command failed (no attitude feedback)")
 
-    def center(self):
-        def _center():
-            with self.lock:
-                self.sdk.setGimbalRotation(0, 0)
-        threading.Thread(target=_center).start()
+def threaded_move(update_func):
+    def task():
+        update_func()
+        move_gimbal()
+        att = cam.getAttitude()
+        print("New Attitude:", att)
+    threading.Thread(target=task).start()
 
-    def zoom_in(self):
-        def _zoom():
-            self.sdk.requestZoomIn()
-            self.sdk.requestZoomHold()
-        threading.Thread(target=_zoom).start()
+# Button command functions
+def pitch_up(): threaded_move(lambda: cam_angle.addPitch(5))
+def pitch_down(): threaded_move(lambda: cam_angle.addPitch(-5))
+def yaw_left(): threaded_move(lambda: cam_angle.addYaw(5))
+def yaw_right(): threaded_move(lambda: cam_angle.addYaw(-5))
+def center(): threaded_move(lambda: cam_angle.zero())
 
-    def zoom_out(self):
-        def _zoom():
-            self.sdk.requestZoomOut()
-            self.sdk.requestZoomHold()
-        threading.Thread(target=_zoom).start()
+def zoom_in():
+    def task():
+        cam.requestZoomIn()
+        sleep(0.5)
+        cam.requestZoomHold()
+        print("Zoom level:", cam.getZoomLevel())
+    threading.Thread(target=task).start()
 
-gimbal = GimbalControl(cam)
+def zoom_out():
+    def task():
+        cam.requestZoomOut()
+        sleep(0.5)
+        cam.requestZoomHold()
+        print("Zoom level:", cam.getZoomLevel())
+    threading.Thread(target=task).start()
 
-# Button callbacks
-def pitch_up(): gimbal.move(dpitch=2)
-def pitch_down(): gimbal.move(dpitch=-2)
-def yaw_left(): gimbal.move(dyaw=2)
-def yaw_right(): gimbal.move(dyaw=-2)
-def pitch_yaw_center(): gimbal.center()
-def zoom_in(): gimbal.zoom_in()
-def zoom_out(): gimbal.zoom_out()
-
-# GUI Layout
+# Layout buttons
 ttk.Button(window, text='🢁', command=pitch_up).grid(row=0, column=1, pady=2)
 ttk.Button(window, text='🢃', command=pitch_down).grid(row=2, column=1, pady=2)
 ttk.Button(window, text='🢀', command=yaw_left).grid(row=1, column=0, pady=2)
 ttk.Button(window, text='🢂', command=yaw_right).grid(row=1, column=2, pady=2)
-ttk.Button(window, text='🎯', command=pitch_yaw_center).grid(row=1, column=1, pady=2)
+ttk.Button(window, text='🎯', command=center).grid(row=1, column=1, pady=2)
 ttk.Button(window, text='🔎➕', command=zoom_in).grid(row=3, column=0, pady=2)
 ttk.Button(window, text='🔎➖', command=zoom_out).grid(row=3, column=2, pady=2)
 
-# Run GUI
+# Start GUI
 window.mainloop()
 cam.disconnect()
-print("exit")
+print("Exited cleanly.")
+
 
