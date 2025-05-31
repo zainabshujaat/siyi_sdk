@@ -10,7 +10,6 @@ sys.path.append(parent_directory)
 
 from siyi_sdk import SIYISDK
 
-# Create the main window
 window = tk.Tk()
 window.title('SiYi Ground Control ( ͡❛ ͜ʖ ͡❛)')
 window.geometry('320x240')
@@ -22,17 +21,13 @@ class CamAngle:
 
     def addYaw(self, dy):
         self.yaw += dy
-        if self.yaw > 45:
-            self.yaw = 45
-        elif self.yaw < -45:
-            self.yaw = -45
+        # Clamp yaw - adjust these limits per your camera specs
+        self.yaw = max(-45, min(45, self.yaw))
 
     def addPitch(self, dp):
         self.pitch += dp
-        if self.pitch > 25:
-            self.pitch = 25
-        elif self.pitch < -90:
-            self.pitch = -90
+        # Clamp pitch - adjust these limits per your camera specs
+        self.pitch = max(-90, min(25, self.pitch))
 
     def zeroYaw(self):
         self.yaw = 0
@@ -41,9 +36,8 @@ class CamAngle:
         self.pitch = 0
 
 cam_angle = CamAngle()
-
-# Initialize camera connection
 cam = SIYISDK(server_ip="192.168.144.25", port=37260)
+
 if not cam.connect():
     print("No connection")
     exit(1)
@@ -51,10 +45,9 @@ if not cam.connect():
 cam.requestFollowMode()
 
 def update_gimbal():
-    """Send updated angles to the gimbal and print attitude."""
-    cam.requestSetAngles(cam_angle.yaw, cam_angle.pitch)
-    sleep(0.1)  # Small delay to prevent command flooding
-    print("Attitude (yaw, pitch, roll):", cam.getAttitude())
+    cam.setGimbalRotation(cam_angle.yaw, cam_angle.pitch)
+    attitude = cam.getAttitude()
+    print(f"Set angles - Yaw: {cam_angle.yaw}, Pitch: {cam_angle.pitch} | Attitude: {attitude}")
 
 def pitch_up():
     cam_angle.addPitch(5)
@@ -77,21 +70,6 @@ def pitch_yaw_center():
     cam_angle.zeroPitch()
     update_gimbal()
 
-def zoom_in():
-    cam.requestZoomIn()
-    sleep(0.5)
-    cam.requestZoomHold()
-    sleep(0.5)
-    print("Zoom level:", cam.getZoomLevel())
-
-def zoom_out():
-    cam.requestZoomOut()
-    sleep(0.5)
-    cam.requestZoomHold()
-    sleep(0.5)
-    print("Zoom level:", cam.getZoomLevel())
-
-# Layout buttons
 pitch_up_button = ttk.Button(window, text='🢁', command=pitch_up)
 pitch_up_button.grid(row=0, column=1, pady=2)
 
@@ -104,16 +82,29 @@ yaw_left_button.grid(row=1, column=0, pady=2)
 yaw_right_button = ttk.Button(window, text='🢂', command=yaw_right)
 yaw_right_button.grid(row=1, column=2, pady=2)
 
-pitch_yaw_center_button = ttk.Button(window, text='🎯', command=pitch_yaw_center)
-pitch_yaw_center_button.grid(row=1, column=1, pady=2)
+center_button = ttk.Button(window, text='🎯', command=pitch_yaw_center)
+center_button.grid(row=1, column=1, pady=2)
+
+def zoom_in():
+    cam.requestZoomIn()
+    sleep(0.5)
+    cam.requestZoomHold()
+    sleep(0.5)
+    print("Zoom level:", cam.getZoomLevel())
 
 zoom_in_button = ttk.Button(window, text='🔎➕', command=zoom_in)
 zoom_in_button.grid(row=3, column=0, pady=2)
 
+def zoom_out():
+    cam.requestZoomOut()
+    sleep(0.5)
+    cam.requestZoomHold()
+    sleep(0.5)
+    print("Zoom level:", cam.getZoomLevel())
+
 zoom_out_button = ttk.Button(window, text='🔎➖', command=zoom_out)
 zoom_out_button.grid(row=3, column=2, pady=2)
 
-# Run the application
 window.mainloop()
 cam.disconnect()
 print("exit")
