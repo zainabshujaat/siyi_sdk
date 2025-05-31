@@ -12,12 +12,10 @@ sys.path.append(parent_directory)
 
 from siyi_sdk import SIYISDK
 
-# Window setup
 window = tk.Tk()
 window.title('SiYi Ground Control ( ͡❛ ͜ʖ ͡❛)')
 window.geometry('320x240')
 
-# Gimbal angle controller
 class CamAngle:
     def __init__(self):
         self.yaw = 0
@@ -39,7 +37,7 @@ class CamAngle:
 
 cam_angle = CamAngle()
 
-# Connect to gimbal
+# Connect to camera
 cam = SIYISDK(server_ip="192.168.144.25", port=37260)
 if not cam.connect():
     print("No connection")
@@ -50,54 +48,55 @@ print("⏳ Waiting for attitude data...")
 sleep(1)
 print("Attitude:", cam.getAttitude())
 
-# Lock for thread-safe access
 lock = threading.Lock()
 
-# Non-blocking gimbal movement
 def move_gimbal():
-    with lock:
-        print(f"[MOVE] Yaw: {cam_angle.yaw}, Pitch: {cam_angle.pitch}")
-        cam.sendGimbalRotationCommand(cam_angle.yaw, cam_angle.pitch)
+    def task():
+        with lock:
+            try:
+                print(f"[MOVE] Yaw: {cam_angle.yaw}, Pitch: {cam_angle.pitch}")
+                cam.setGimbalRotation(cam_angle.yaw, cam_angle.pitch)
+            except Exception as e:
+                print(f"[ERROR] Failed to set gimbal rotation: {e}")
+    threading.Thread(target=task, daemon=True).start()
 
-# Button commands
 def pitch_up():
     cam_angle.addPitch(5)
-    threading.Thread(target=move_gimbal).start()
+    move_gimbal()
 
 def pitch_down():
     cam_angle.addPitch(-5)
-    threading.Thread(target=move_gimbal).start()
+    move_gimbal()
 
 def yaw_left():
     cam_angle.addYaw(5)
-    threading.Thread(target=move_gimbal).start()
+    move_gimbal()
 
 def yaw_right():
     cam_angle.addYaw(-5)
-    threading.Thread(target=move_gimbal).start()
+    move_gimbal()
 
 def pitch_yaw_center():
     cam_angle.zeroYaw()
     cam_angle.zeroPitch()
-    threading.Thread(target=move_gimbal).start()
+    move_gimbal()
 
 def zoom_in():
-    def zoom_task():
+    def task():
         cam.requestZoomIn()
         sleep(0.5)
         cam.requestZoomHold()
         print("Zoom level:", cam.getZoomLevel())
-    threading.Thread(target=zoom_task).start()
+    threading.Thread(target=task, daemon=True).start()
 
 def zoom_out():
-    def zoom_task():
+    def task():
         cam.requestZoomOut()
         sleep(0.5)
         cam.requestZoomHold()
         print("Zoom level:", cam.getZoomLevel())
-    threading.Thread(target=zoom_task).start()
+    threading.Thread(target=task, daemon=True).start()
 
-# Layout
 ttk.Button(window, text='🢁', command=pitch_up).grid(row=0, column=1, pady=2)
 ttk.Button(window, text='🢃', command=pitch_down).grid(row=2, column=1, pady=2)
 ttk.Button(window, text='🢀', command=yaw_left).grid(row=1, column=0, pady=2)
@@ -106,8 +105,6 @@ ttk.Button(window, text='🎯', command=pitch_yaw_center).grid(row=1, column=1, 
 ttk.Button(window, text='🔎➕', command=zoom_in).grid(row=3, column=0, pady=2)
 ttk.Button(window, text='🔎➖', command=zoom_out).grid(row=3, column=2, pady=2)
 
-# Run GUI loop
 window.mainloop()
 cam.disconnect()
 print("exit")
-
