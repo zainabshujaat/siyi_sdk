@@ -23,31 +23,32 @@ if not cam.connect():
 
 cam.requestFollowMode()
 
-# Camera angle state
-class CamAngle:
+class GimbalControl:
     def __init__(self, sdk):
         self.sdk = sdk
         self.lock = threading.Lock()
-        att = sdk.getAttitude()
-        self.yaw = att[0] if att else 0
-        self.pitch = att[1] if att else 0
+
+    def _get_safe_attitude(self):
+        attitude = self.sdk.getAttitude()
+        if attitude is None or len(attitude) < 2:
+            return 0, 0
+        return attitude[0], attitude[1]  # yaw, pitch
 
     def move(self, dyaw=0, dpitch=0):
-        def _move():
+        def _threaded_move():
             with self.lock:
-                self.yaw += dyaw
-                self.pitch += dpitch
-                self.yaw = max(min(self.yaw, 45), -45)
-                self.pitch = max(min(self.pitch, 25), -90)
-                print(f"[MOVE] Yaw: {self.yaw}, Pitch: {self.pitch}")
-                self.sdk.setGimbalRotation(self.yaw, self.pitch)
-        threading.Thread(target=_move).start()
+                yaw, pitch = self._get_safe_attitude()
+                yaw += dyaw
+                pitch += dpitch
+                yaw = max(min(yaw, 45), -45)
+                pitch = max(min(pitch, 25), -90)
+                print(f"[MOVE] Yaw: {yaw}, Pitch: {pitch}")
+                self.sdk.setGimbalRotation(yaw, pitch)
+        threading.Thread(target=_threaded_move).start()
 
     def center(self):
         def _center():
             with self.lock:
-                self.yaw = 0
-                self.pitch = 0
                 self.sdk.setGimbalRotation(0, 0)
         threading.Thread(target=_center).start()
 
@@ -63,16 +64,16 @@ class CamAngle:
             self.sdk.requestZoomHold()
         threading.Thread(target=_zoom).start()
 
-cam_angle = CamAngle(cam)
+gimbal = GimbalControl(cam)
 
 # Button callbacks
-def pitch_up(): cam_angle.move(dpitch=2)
-def pitch_down(): cam_angle.move(dpitch=-2)
-def yaw_left(): cam_angle.move(dyaw=2)
-def yaw_right(): cam_angle.move(dyaw=-2)
-def pitch_yaw_center(): cam_angle.center()
-def zoom_in(): cam_angle.zoom_in()
-def zoom_out(): cam_angle.zoom_out()
+def pitch_up(): gimbal.move(dpitch=2)
+def pitch_down(): gimbal.move(dpitch=-2)
+def yaw_left(): gimbal.move(dyaw=2)
+def yaw_right(): gimbal.move(dyaw=-2)
+def pitch_yaw_center(): gimbal.center()
+def zoom_in(): gimbal.zoom_in()
+def zoom_out(): gimbal.zoom_out()
 
 # GUI Layout
 ttk.Button(window, text='🢁', command=pitch_up).grid(row=0, column=1, pady=2)
