@@ -2,6 +2,18 @@ import tkinter as tk
 from tkinter import ttk
 import threading
 from time import sleep
+import sys
+import os
+
+# Fix Python path to import SIYISDK
+current = os.path.dirname(os.path.realpath(__file__))
+parent_directory = os.path.dirname(current)
+sys.path.append(parent_directory)
+
+from siyi_sdk import SIYISDK  # <-- ADD THIS IMPORT
+
+# Global camera object
+cam = None
 
 class CamAngle:
     def __init__(self):
@@ -26,7 +38,7 @@ cam_angle = CamAngle()
 
 # Initialize SIYI SDK (run in a separate thread)
 def init_cam():
-    global cam
+    global cam  # Declare `cam` as global
     cam = SIYISDK(server_ip="192.168.144.25", port=37260)
     if not cam.connect():
         print("No connection")
@@ -35,8 +47,9 @@ def init_cam():
 
 # Run SDK commands in a thread to avoid freezing GUI
 def send_gimbal_command():
-    cam.setGimbalRotation(cam_angle.yaw, cam_angle.pitch)
-    print("Attitude:", cam.getAttitude())
+    if cam:  # Only run if `cam` exists
+        cam.setGimbalRotation(cam_angle.yaw, cam_angle.pitch)
+        print("Attitude:", cam.getAttitude())
 
 def pitch_up():
     cam_angle.addPitch(5)
@@ -61,20 +74,22 @@ def picth_yaw_center():
 
 def zoom_in():
     def _zoom_in():
-        cam.requestZoomIn()
-        sleep(0.5)
-        cam.requestZoomHold()
-        sleep(0.5)
-        print("Zoom level:", cam.getZoomLevel())
+        if cam:
+            cam.requestZoomIn()
+            sleep(0.5)
+            cam.requestZoomHold()
+            sleep(0.5)
+            print("Zoom level:", cam.getZoomLevel())
     threading.Thread(target=_zoom_in, daemon=True).start()
 
 def zoom_out():
     def _zoom_out():
-        cam.requestZoomOut()
-        sleep(0.5)
-        cam.requestZoomHold()
-        sleep(0.5)
-        print("Zoom level:", cam.getZoomLevel())
+        if cam:
+            cam.requestZoomOut()
+            sleep(0.5)
+            cam.requestZoomHold()
+            sleep(0.5)
+            print("Zoom level:", cam.getZoomLevel())
     threading.Thread(target=_zoom_out, daemon=True).start()
 
 # Initialize camera in a thread
@@ -103,6 +118,10 @@ center_button.grid(row=1, column=1, pady=2)
 zoom_in_button.grid(row=3, column=0, pady=2)
 zoom_out_button.grid(row=3, column=2, pady=2)
 
+# Run GUI
 window.mainloop()
-cam.disconnect()
+
+# Disconnect safely (only if `cam` exists)
+if cam:
+    cam.disconnect()
 print("exit")
