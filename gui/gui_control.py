@@ -10,7 +10,7 @@ current = os.path.dirname(os.path.realpath(__file__))
 parent_directory = os.path.dirname(current)
 sys.path.append(parent_directory)
 
-from siyi_sdk import SIYISDK  # <-- ADD THIS IMPORT
+from siyi_sdk import SIYISDK  # <-- SIYI SDK import
 
 # Global camera object
 cam = None
@@ -38,18 +38,37 @@ cam_angle = CamAngle()
 
 # Initialize SIYI SDK (run in a separate thread)
 def init_cam():
-    global cam  # Declare `cam` as global
+    global cam
     cam = SIYISDK(server_ip="192.168.144.25", port=37260)
     if not cam.connect():
-        print("No connection")
+        print("❌ No connection to gimbal")
         exit(1)
+
+    print("✅ Connected to gimbal.")
+
+    # 🔁 Request attitude stream — required for control
+    cam.send_command(cmd_id=0x03, data=b'')
+    print("📡 Requested attitude stream from gimbal (CMD 0x03)")
+
+    # Wait for feedback to start
+    for i in range(10):
+        att = cam.getAttitude()
+        if att:
+            print("✅ Received attitude:", att)
+            break
+        sleep(0.3)
+    else:
+        print("⚠️ No attitude feedback received — gimbal control may not work.")
+
+    # Optional: Set to follow mode (can help unlock control)
     cam.requestFollowMode()
 
 # Run SDK commands in a thread to avoid freezing GUI
 def send_gimbal_command():
-    if cam:  # Only run if `cam` exists
+    if cam:
         cam.setGimbalRotation(cam_angle.yaw, cam_angle.pitch)
-        print("Attitude:", cam.getAttitude())
+        print("🎯 Sent gimbal command →", cam_angle.yaw, cam_angle.pitch)
+        print("📈 Attitude:", cam.getAttitude())
 
 def pitch_up():
     cam_angle.addPitch(5)
@@ -79,7 +98,7 @@ def zoom_in():
             sleep(0.5)
             cam.requestZoomHold()
             sleep(0.5)
-            print("Zoom level:", cam.getZoomLevel())
+            print("🔍 Zoom level:", cam.getZoomLevel())
     threading.Thread(target=_zoom_in, daemon=True).start()
 
 def zoom_out():
@@ -89,7 +108,7 @@ def zoom_out():
             sleep(0.5)
             cam.requestZoomHold()
             sleep(0.5)
-            print("Zoom level:", cam.getZoomLevel())
+            print("🔎 Zoom level:", cam.getZoomLevel())
     threading.Thread(target=_zoom_out, daemon=True).start()
 
 # Initialize camera in a thread
@@ -121,7 +140,8 @@ zoom_out_button.grid(row=3, column=2, pady=2)
 # Run GUI
 window.mainloop()
 
-# Disconnect safely (only if `cam` exists)
+# Disconnect safely
 if cam:
     cam.disconnect()
-print("exit")
+print("👋 Exit")
+
